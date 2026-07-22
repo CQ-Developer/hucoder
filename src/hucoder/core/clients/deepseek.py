@@ -1,9 +1,11 @@
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 import httpx
+
+from .commons import clean_dict
 
 
 class SystemMessage(TypedDict):
@@ -49,7 +51,7 @@ class ToolFunction(TypedDict):
     name: str
     description: NotRequired[str]
     strict: NotRequired[bool]
-    parameters: NotRequired[dict[str, object]]
+    parameters: NotRequired[dict[str, Any]]
 
 
 class Tool(TypedDict):
@@ -97,9 +99,30 @@ class ChatCompletionsChoiceMessageToolCall:
 @dataclass(frozen=True, kw_only=True)
 class ChatCompletionsChoiceMessage:
     role: Literal["assistant"]
-    content: str
+    content: str | None
     reasoning_content: str | None = None
     tool_calls: list[ChatCompletionsChoiceMessageToolCall] | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ChatCompletionsChoiceLogprobsContentTop:
+    token: str
+    logprob: float
+    bytes: bytes | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ChatCompletionsChoiceLogprobsContent:
+    token: str
+    logprob: float
+    bytes: bytes | None
+    top_logprobs: list[ChatCompletionsChoiceLogprobsContentTop]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ChatCompletionsChoiceLogprobs:
+    content: list[ChatCompletionsChoiceLogprobsContent] | None
+    reasoning_content: list[ChatCompletionsChoiceLogprobsContent] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -107,7 +130,7 @@ class ChatCompletionsChoice:
     index: int
     finish_reason: Literal["stop", "length", "content_filter", "tool_calls", "insufficient_system_resource"]
     message: ChatCompletionsChoiceMessage
-    logprobs: object | None = None
+    logprobs: ChatCompletionsChoiceLogprobs | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -145,7 +168,7 @@ class DeepSeekChatClient:
         top_logprobs: int | None = None,
         user_id: str | None = None,
     ) -> ChatCompletions | Iterator[ChatCompletions]:
-        parameters: dict[str, object] = {
+        raw = {
             "messages": messages,
             "model": model,
             "thinking": thinking,
@@ -163,7 +186,7 @@ class DeepSeekChatClient:
             "user_id": user_id,
         }
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        body = {k: v for k, v in parameters.items() if v is not None}
+        body = clean_dict(raw)
         if not stream:
             response = httpx.post(self.base_url, headers=headers, json=body)
             return ChatCompletions(**response.json())
